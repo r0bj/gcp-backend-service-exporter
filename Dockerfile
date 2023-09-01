@@ -1,4 +1,4 @@
-FROM artifactory.wikia-inc.com/dockerhub/golang:1.21.0 AS builder
+FROM golang:1.21.0 AS builder
 
 WORKDIR /workspace
 
