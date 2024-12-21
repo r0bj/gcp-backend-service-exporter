@@ -22,14 +22,14 @@ import (
 )
 
 const (
-	ver                              string = "0.13"
+	ver                              string = "0.14"
 	negStatusAnnotation              string = "cloud.google.com/neg-status"
 	kubeServiceGcpBackendsMetricName string = "kube_service_gcp_backends"
 )
 
 var (
 	listenAddress = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":8080").String()
-	namespace     = kingpin.Flag("namespace", "Namespace name.").Envar("NAMESPACE").Default("default").String()
+	namespace     = kingpin.Flag("namespace", "Namespace name.").Envar("NAMESPACE").Default("").String()
 	loopInterval  = kingpin.Flag("interval", "Interval for fetching services data from Kubernetes API.").Envar("INTERVAL").Default("300").Int()
 	verbose       = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
 )
