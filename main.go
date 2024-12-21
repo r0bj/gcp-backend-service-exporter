@@ -23,7 +23,6 @@ import (
 
 const (
 	ver                              string = "0.13"
-	loopInterval                     int    = 300
 	negStatusAnnotation              string = "cloud.google.com/neg-status"
 	kubeServiceGcpBackendsMetricName string = "kube_service_gcp_backends"
 )
@@ -31,6 +30,7 @@ const (
 var (
 	listenAddress = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":8080").String()
 	namespace     = kingpin.Flag("namespace", "Namespace name.").Envar("NAMESPACE").Default("default").String()
+	loopInterval  = kingpin.Flag("interval", "Interval for fetching services data from Kubernetes API.").Envar("INTERVAL").Default("300").Int()
 	verbose       = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
 )
 
@@ -50,7 +50,7 @@ type NegStatusAnnotation struct {
 	NetworkEndpointGroups map[string]string `json:"network_endpoint_groups"`
 }
 
-func unregisterStaleMetrics(serviceWithNegAnnotation map[string]struct{}) error {
+func unregisterStaleMetrics(servicesWithNegAnnotation map[string]struct{}) error {
 	// Gather all current Prometheus metrics
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
@@ -66,8 +66,8 @@ func unregisterStaleMetrics(serviceWithNegAnnotation map[string]struct{}) error 
 					metricLabels[labelPair.GetName()] = labelPair.GetValue()
 				}
 
-				// Check if the queue represented by this metric is not in the current list of queues
-				if _, ok := serviceWithNegAnnotation[metricLabels["service_backend"]]; !ok {
+				// Check if the service represented by this metric is not in the current list of services
+				if _, ok := servicesWithNegAnnotation[metricLabels["service_backend"]]; !ok {
 					slog.Info("Unregistering previously present data series", "metric", kubeServiceGcpBackendsMetricName, "label service_backend", metricLabels["service_backend"], "label gcp_backend", metricLabels["gcp_backend"])
 
 					// Delete the obsolete metric from Prometheus
@@ -94,7 +94,7 @@ func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset, 
 		return
 	}
 
-	serviceWithNegAnnotation := make(map[string]struct{})
+	servicesWithNegAnnotation := make(map[string]struct{})
 
 	for _, service := range services.Items {
 		for annotationKey, annotationValue := range service.Annotations {
@@ -112,13 +112,13 @@ func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset, 
 
 					slog.Debug("Set metric", "service backend", serviceBackend, "gcp backend", gcpBackend)
 					kubeServiceGcpBackends.WithLabelValues(serviceBackend, gcpBackend).Set(1)
-					serviceWithNegAnnotation[serviceBackend] = struct{}{}
+					servicesWithNegAnnotation[serviceBackend] = struct{}{}
 				}
 			}
 		}
 	}
 
-	if err := unregisterStaleMetrics(serviceWithNegAnnotation); err != nil {
+	if err := unregisterStaleMetrics(servicesWithNegAnnotation); err != nil {
 		slog.Error("Unregistering stale metric failed", "error", err)
 		errorsCounter.Inc()
 	}
@@ -127,7 +127,7 @@ func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset, 
 func recordMetrics(ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
 	slog.Info("Get services", "namespace", namespace)
 
-	ticker := time.NewTicker(time.Second * time.Duration(loopInterval))
+	ticker := time.NewTicker(time.Second * time.Duration(*loopInterval))
 	defer ticker.Stop()
 
 	performRecordMetrics(ctx, clientset, namespace)
