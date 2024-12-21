@@ -22,14 +22,14 @@ import (
 )
 
 const (
-	ver                 string = "0.12"
+	ver                 string = "0.13"
 	loopInterval        int    = 300
 	negStatusAnnotation string = "cloud.google.com/neg-status"
 )
 
 var (
 	listenAddress = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":8080").String()
-	namespace     = kingpin.Flag("namespace", "Namespace name.").Envar("NAMESPACE").Default("").String()
+	namespace     = kingpin.Flag("namespace", "Namespace name.").Envar("NAMESPACE").Default("default").String()
 	verbose       = kingpin.Flag("verbose", "Verbose mode.").Short('v').Bool()
 )
 
@@ -49,9 +49,9 @@ type NegStatusAnnotation struct {
 	NetworkEndpointGroups map[string]string `json:"network_endpoint_groups"`
 }
 
-func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset) {
+func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
 	slog.Debug("Fetching Services")
-	services, err := clientset.CoreV1().Services(*namespace).List(ctx, metav1.ListOptions{})
+	services, err := clientset.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Error("List Services failed", "error", err)
 		errorsCounter.Inc()
@@ -80,13 +80,13 @@ func performRecordMetrics(ctx context.Context, clientset *kubernetes.Clientset) 
 	}
 }
 
-func recordMetrics(ctx context.Context, clientset *kubernetes.Clientset) {
-	slog.Info("Get services", "namespace", *namespace)
+func recordMetrics(ctx context.Context, clientset *kubernetes.Clientset, namespace string) {
+	slog.Info("Get services", "namespace", namespace)
 
 	ticker := time.NewTicker(time.Second * time.Duration(loopInterval))
 	defer ticker.Stop()
 
-	performRecordMetrics(ctx, clientset)
+	performRecordMetrics(ctx, clientset, namespace)
 
 	for {
 		select {
@@ -94,7 +94,7 @@ func recordMetrics(ctx context.Context, clientset *kubernetes.Clientset) {
 			slog.Info("Record metrics shutting down...")
 			return
 		case <-ticker.C:
-			performRecordMetrics(ctx, clientset)
+			performRecordMetrics(ctx, clientset, namespace)
 		}
 	}
 }
@@ -171,7 +171,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	go recordMetrics(ctx, clientset)
+	go recordMetrics(ctx, clientset, *namespace)
 
 	// Start the HTTP server
 	if err := startHTTPServer(ctx); err != nil && err != http.ErrServerClosed {
